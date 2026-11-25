@@ -39,6 +39,7 @@ enum boot_device_choice {
     BOOT_DEVICE_TB322FC = 1,
     BOOT_DEVICE_TB323FU = 2,
     BOOT_DEVICE_SHENG = 3,
+    BOOT_DEVICE_LAPIS = 4,
 };
 
 enum boot_default_target {

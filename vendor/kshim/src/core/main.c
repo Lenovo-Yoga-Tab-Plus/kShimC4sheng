@@ -218,6 +218,165 @@ static bool get_manifest(uint64_t linux_base,
     return true;
 }
 
+/* Stock Android on a v2 boot image never receives ABL's initrd or DT.
+ * The packed image carries them as plain entries; publish the real
+ * addresses into the Android DTB before jumping to the base kernel. */
+static bool entry_name_is(const MANIFEST_ENTRY *entry, const char *name)
+{
+    size_t length = strlen(name);
+    return entry->name_len == length &&
+        memcmp(entry->name, name, length) == 0;
+}
+
+static const MANIFEST_ENTRY *find_named_entry(const MANIFEST_VIEW *view,
+                                              const char *name,
+                                              uint32_t type)
+{
+    uint32_t index;
+
+    for (index = 0; index < view->manifest->header.entry_count; ++index) {
+        const MANIFEST_ENTRY *entry = view->entries[index];
+        if (entry->type == type && entry_name_is(entry, name))
+            return entry;
+    }
+    return NULL;
+}
+
+static void clean_to_poc(uint64_t address, uint64_t size)
+{
+    uint64_t ctr = 0;
+    uint64_t line;
+    uint64_t end;
+
+    if (size == 0 || address > UINT64_MAX - size)
+        return;
+    asm volatile("mrs %0, ctr_el0" : "=r"(ctr));
+    line = 4ULL << ((ctr >> 16) & 0xf);
+    end = address + size;
+    for (uint64_t current = address & ~(line - 1); current < end; current += line)
+        asm volatile("dc civac, %0" :: "r"(current) : "memory");
+    asm volatile("dsb sy" ::: "memory");
+}
+
+/* A flashed lapis menu is an Android v2 boot image. ABL does not load
+ * vendor_boot, init_boot or dtbo for that header, so it hands over the Linux
+ * DTB and no initrd. The packer carries the device tree and ramdisk from a
+ * real Android boot. The stock kernel stays where ABL loaded this image;
+ * moving it is what made the tablet reset. The ramdisk and tree are copied
+ * to 2 MiB-aligned RAM that is not the kernel or the shim, because the
+ * address ABL used (0xb5067000) is not 2 MiB aligned and mapping it exhausts
+ * the shim's page tables. */
+#define ANDROID_DTB_BASE    UINT64_C(0xab000000)
+#define ANDROID_INITRD_BASE UINT64_C(0xb5000000)
+
+static uint64_t android_kernel_base;
+
+static int range_hits_shim(uint64_t base, uint64_t size)
+{
+    uint64_t shim = kshim_mmu_image_base();
+    uint64_t shim_end = shim + UINT64_C(0x400000);
+
+    if (size == 0 || base > UINT64_MAX - size || shim == 0)
+        return 1;
+    return base < shim_end && shim < base + size;
+}
+
+static int ranges_overlap(uint64_t a, uint64_t a_size, uint64_t b, uint64_t b_size)
+{
+    if (a_size == 0 || b_size == 0 || a > UINT64_MAX - a_size || b > UINT64_MAX - b_size)
+        return 1;
+    return a < b + b_size && b < a + a_size;
+}
+
+static int map_wb(uint64_t base, uint64_t size)
+{
+    if (range_hits_shim(base, size))
+        return -1;
+    return kshim_mmu_add_region(base, size, KSHIM_MMU_NORMAL_WB,
+                                KSHIM_MMU_READ | KSHIM_MMU_WRITE);
+}
+
+static int place_android_blob(uint64_t dest, uint64_t src, uint64_t size)
+{
+    if (size == 0 || dest == src)
+        return 0;
+    if (map_wb(dest, size) != 0)
+        return -1;
+    memmove((void *)(uintptr_t)dest, (const void *)(uintptr_t)src, (size_t)size);
+    clean_to_poc(dest, size);
+    return 0;
+}
+
+static int publish_android_initrd(const MANIFEST_VIEW *view,
+                                  uint64_t linux_base,
+                                  uint64_t *dt_out)
+{
+    const MANIFEST_ENTRY *dtb =
+        find_named_entry(view, "android-dtb", MF_ENTRY_TYPE_DTB);
+    const MANIFEST_ENTRY *ramdisk =
+        find_named_entry(view, "android-initrd", MF_ENTRY_TYPE_BLOB);
+    uint64_t shim;
+    uint64_t kern_size;
+    uint64_t kernel_at;
+    uint64_t dt_at;
+    uint64_t rd_at;
+    uint64_t rd_end;
+    void *blob;
+    int chosen;
+
+    android_kernel_base = 0;
+    if (!dtb || !ramdisk || !dtb->size || !ramdisk->size)
+        return -1;
+    if (linux_base > UINT64_MAX - dtb->offset ||
+        linux_base > UINT64_MAX - ramdisk->offset ||
+        ramdisk->size > UINT64_MAX - (linux_base + ramdisk->offset) ||
+        dtb->size > UINT64_C(0x200000) ||
+        ramdisk->size > UINT64_C(0x3000000))
+        return -1;
+
+    shim = kshim_mmu_image_base();
+    kern_size = (shim > linux_base && shim - linux_base <= UINT64_C(0x2800000))
+        ? shim - linux_base : UINT64_C(0x2270000);
+    /* Kernel text plus the shim that is running. Neither copy may land here. */
+    if (kern_size > UINT64_MAX - UINT64_C(0x400000) ||
+        linux_base > UINT64_MAX - (kern_size + UINT64_C(0x400000)) ||
+        ranges_overlap(ANDROID_INITRD_BASE, ramdisk->size,
+                       linux_base, kern_size + UINT64_C(0x400000)) ||
+        ranges_overlap(ANDROID_DTB_BASE, dtb->size,
+                       linux_base, kern_size + UINT64_C(0x400000)))
+        return -1;
+
+    kernel_at = linux_base;
+
+    rd_at = linux_base + ramdisk->offset;
+    if (place_android_blob(ANDROID_INITRD_BASE, rd_at, ramdisk->size) != 0)
+        return -1;
+    rd_at = ANDROID_INITRD_BASE;
+
+    dt_at = linux_base + dtb->offset;
+    if (place_android_blob(ANDROID_DTB_BASE, dt_at, dtb->size) != 0)
+        return -1;
+    dt_at = ANDROID_DTB_BASE;
+
+    blob = (void *)(uintptr_t)dt_at;
+    if (dt_validate(blob, (size_t)dtb->size) != 0)
+        return -1;
+    chosen = fdt_path_offset(blob, "/chosen");
+    if (chosen < 0)
+        return -1;
+    rd_end = rd_at + ramdisk->size;
+    if (fdt_setprop_u64(blob, chosen, "linux,initrd-start", rd_at) != 0 ||
+        fdt_setprop_u64(blob, chosen, "linux,initrd-end", rd_end) != 0)
+        return -1;
+    clean_to_poc(dt_at, dtb->size);
+    if (kernel_at != linux_base)
+        android_kernel_base = kernel_at;
+    printf("Android kernel 0x%lx initrd 0x%lx-0x%lx dtb 0x%lx\n",
+           kernel_at, rd_at, rd_end, dt_at);
+    *dt_out = dt_at;
+    return 0;
+}
+
 static void sync_image_cache(uint64_t address, uint64_t size)
 {
     uint64_t ctr_el0 = 0;
@@ -1328,6 +1487,34 @@ int kshim_main(
             }
         }
 #endif
+        if ((entry->flags & MF_ENTRY_FLAG_BASE_IMAGE) != 0 &&
+            (entry->flags & MF_ENTRY_FLAG_HAS_DEVICE_TREE_BLOB) == 0) {
+            uint64_t android_dt = 0;
+            /* An image that carries the Android payload uses it. Without one
+             * the bootloader's DTB is kept, which is right for a v3/v4 header
+             * where ABL built it for this kernel. */
+            if (publish_android_initrd(&view, linux_base, &android_dt) == 0) {
+                selected_device_tree = android_dt;
+            } else if (find_named_entry(&view, "android-dtb", MF_ENTRY_TYPE_DTB) != NULL) {
+                /* The copies did not land. Jumping the stock kernel with the
+                 * Linux DTB stays on "Starting, please wait...", so boot Linux
+                 * instead of hanging there. */
+                printf("Android handoff failed; booting Linux\n");
+                for (uint32_t i = 0; i < view.manifest->header.entry_count; ++i) {
+                    const MANIFEST_ENTRY *candidate = view.entries[i];
+                    if (candidate != NULL &&
+                        candidate->type == MF_ENTRY_TYPE_LINUX &&
+                        (candidate->flags & MF_ENTRY_FLAG_BASE_IMAGE) == 0 &&
+                        (candidate->flags & MF_ENTRY_FLAG_EXECUTABLE) != 0) {
+                        entry = candidate;
+                        break;
+                    }
+                }
+            } else {
+                printf("Android keeps bootloader DT\n");
+            }
+        }
+
         if (entry->flags & MF_ENTRY_FLAG_COPY) {
             uint64_t source_address = linux_base + entry->offset;
             printf("Copying ");
@@ -1350,13 +1537,16 @@ int kshim_main(
         if (entry->type == MF_ENTRY_TYPE_LINUX) {
             uint64_t entry_offset = entry->flags & MF_ENTRY_FLAG_BASE_IMAGE
                 ? 4 : entry->entry_offset;
+            uint64_t boot_at = linux_base + entry->offset;
+            if ((entry->flags & MF_ENTRY_FLAG_BASE_IMAGE) != 0 &&
+                android_kernel_base != 0)
+                boot_at = android_kernel_base;
             printf("Booting ");
             print_entry_name(entry);
             printf(" at 0x%lx with DTB at 0x%lx\n",
-                   linux_base + entry->offset, selected_device_tree);
+                   boot_at, selected_device_tree);
             prepare_boot();
-            arm64_boot_linux(linux_base + entry->offset,
-                             selected_device_tree, entry_offset);
+            arm64_boot_linux(boot_at, selected_device_tree, entry_offset);
         }
         prepare_boot();
         arm64_boot_image(linux_base + entry->offset + entry->entry_offset,

@@ -86,6 +86,8 @@ def extract(boot_path, out_dir, prefix, stock=False):
             result["compression"] = "none"
         # A DTB appended after a gzip member lands at the start of unused_data.
         # For a raw Image it must end exactly at the end of the kernel blob.
+        # A v2 boot image (Silicium) stores the DTB in its own section; the
+        # header's dtb_size matches that blob, which is not inside the kernel.
         fdt = find_fdt(trailing, at_start=True) if trailing else None
         if fdt is None and result["compression"] == "none":
             fdt = find_fdt(data, at_end=True)
@@ -96,6 +98,20 @@ def extract(boot_path, out_dir, prefix, stock=False):
                                   src[off:off + size])
             if src is data:
                 data = data[:off]
+        elif image.get("dtb_size"):
+            raw = image["raw"]
+            want = image["dtb_size"]
+            start = 0
+            while True:
+                i = raw.find(FDT_MAGIC, start)
+                if i < 0 or i + 8 > len(raw):
+                    break
+                total = struct.unpack_from(">I", raw, i + 4)[0]
+                if total == want and i + total <= len(raw):
+                    result["dtb"] = write(os.path.join(out_dir, prefix + ".dtb"),
+                                          raw[i:i + total])
+                    break
+                start = i + 1
         assert_raw_arm64_image(data, "distro kernel")
         result["kernel"] = write(os.path.join(out_dir, prefix + "-Image"), data)
 

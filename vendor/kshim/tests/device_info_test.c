@@ -287,6 +287,74 @@ static void test_conflicting_board_identifiers(void)
     assert(info.soc == DEVICE_SOC_SM8750);
 }
 
+
+/* Lapis is an exact root compatible. qcom,qrd and a prefixed name are not,
+ * and a second SoC family leaves the SoC unknown. */
+static void test_lapis_identities(void)
+{
+    static const char *const qrd[] = { "qcom,lapis-qrd", "qcom,lapis", "qcom,qrd" };
+    static const char *const lapis[] = { "qcom,lapis" };
+    static const char *const generic[] = { "qcom,qrd" };
+    static const char *const pineapple[] = { "qcom,pineapple" };
+    static const char *const prefixed[] = { "qcom,lapis-extra" };
+    static const char *const both[] = { "xiaomi,sheng", "qcom,lapis", "qcom,kalama" };
+    static const char *const sheng[] = { "xiaomi,sheng", "qcom,kalama" };
+    static const char *const two_soc[] = { "qcom,sm8650", "qcom,sm8550" };
+    struct device_info info;
+    void *f;
+
+    f = new_tree();
+    set_model(f, "Qualcomm Technologies, Inc. Lapis QRD");
+    set_compat(f, qrd, 3);
+    run(f, &info);
+    assert(info.board == DEVICE_BOARD_LAPIS);
+    assert(info.soc == DEVICE_SOC_SM8650);
+
+    f = new_tree();
+    set_compat(f, lapis, 1);
+    run(f, &info);
+    assert(info.board == DEVICE_BOARD_LAPIS);
+    assert(info.soc == DEVICE_SOC_SM8650);
+
+    f = new_tree();
+    set_compat(f, generic, 1);
+    run(f, &info);
+    assert(info.board == DEVICE_BOARD_UNKNOWN);
+    assert(info.soc == DEVICE_SOC_UNKNOWN);
+
+    f = new_tree();
+    set_compat(f, pineapple, 1);
+    run(f, &info);
+    assert(info.board == DEVICE_BOARD_UNKNOWN);
+    assert(info.soc == DEVICE_SOC_SM8650);
+
+    f = new_tree();
+    set_compat(f, prefixed, 1);
+    run(f, &info);
+    assert(info.board == DEVICE_BOARD_UNKNOWN);
+    assert(info.soc == DEVICE_SOC_UNKNOWN);
+
+    f = new_tree();
+    set_model(f, "sheng");
+    set_compat(f, both, 3);
+    run(f, &info);
+    assert(info.board == DEVICE_BOARD_UNKNOWN);
+    assert(info.soc == DEVICE_SOC_UNKNOWN);
+
+    f = new_tree();
+    set_model(f, "Xiaomi Pad 6S Pro sheng");
+    set_compat(f, sheng, 2);
+    run(f, &info);
+    assert(info.board == DEVICE_BOARD_SHENG);
+    assert(info.soc == DEVICE_SOC_SM8550);
+
+    f = new_tree();
+    set_compat(f, two_soc, 2);
+    run(f, &info);
+    assert(info.board == DEVICE_BOARD_UNKNOWN);
+    assert(info.soc == DEVICE_SOC_UNKNOWN);
+}
+
 static void test_conflicting_soc_identifiers(void)
 {
     static const char *const c[] = { "qcom,sm8750", "qcom,canoep" };
@@ -1260,6 +1328,7 @@ int main(int argc, char **argv)
     test_qcom_sunp_exact_soc_only();
     test_negative_identification();
     test_conflicting_board_identifiers();
+    test_lapis_identities();
     test_conflicting_soc_identifiers();
     test_multi_compatible_order();
     test_stock_panel_exact();

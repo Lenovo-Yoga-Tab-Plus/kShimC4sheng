@@ -2,7 +2,12 @@
 # Build out/boot_a.img from an extracted payload directory.
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source "$ROOT/config/sheng.env"
+DEV="${KSHIM_DEVICE:-sheng}"
+case "$DEV" in
+  ''|*[!A-Za-z0-9_-]*) echo "invalid KSHIM_DEVICE: $DEV" >&2; exit 1 ;;
+esac
+[ -f "$ROOT/config/${DEV}.env" ] || { echo "missing $ROOT/config/${DEV}.env" >&2; exit 1; }
+source "$ROOT/config/${DEV}.env"
 
 usage() {
   cat <<'USAGE'
@@ -17,7 +22,7 @@ payload dir must contain:
 options:
   --default android|linux   menu default (default: android)
   --timeout-ms N            menu timeout (default: 8000)
-  --bootargs STR            Linux cmdline (default: config/sheng.env)
+  --bootargs STR            Linux cmdline (default: config/$KSHIM_DEVICE.env, sheng if unset)
   --partition-size N        boot partition size (default: 201326592)
   --keep-work               keep out/work
 USAGE

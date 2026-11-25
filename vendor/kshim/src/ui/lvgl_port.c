@@ -27,6 +27,9 @@
 #ifndef CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS
 #define CONFIG_KSHIM_BACKDROP_TEXTURE_PIXELS (256U * 256U)
 #endif
+#ifndef CONFIG_KSHIM_DEVICE_BANNER
+#define CONFIG_KSHIM_DEVICE_BANNER "Xiaomi Pad 6S Pro · sheng · v"
+#endif
 #ifndef CONFIG_KSHIM_UI_ROTATION_CCW
 #define CONFIG_KSHIM_UI_ROTATION_CCW 0
 #endif
@@ -596,7 +599,7 @@ static int KshimBuildChrome(void)
 
   mSubtitle = lv_label_create(mPanel);
   if (mSubtitle == NULL) return -1;
-  lv_label_set_text_static(mSubtitle, "Xiaomi Pad 6S Pro \u00b7 sheng \u00b7 v" KSHIM_BUILD_VERSION);
+  lv_label_set_text_static(mSubtitle, CONFIG_KSHIM_DEVICE_BANNER KSHIM_BUILD_VERSION);
   lv_obj_set_style_text_font(mSubtitle, mStatusFont, 0);
   lv_obj_set_style_text_color(mSubtitle, KshimMutedColor(), 0);
   lv_label_set_long_mode(mSubtitle, LV_LABEL_LONG_DOT);

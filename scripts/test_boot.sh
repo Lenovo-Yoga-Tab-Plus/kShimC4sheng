@@ -2,7 +2,12 @@
 # One-shot boot the packed image without writing boot_a (`fastboot boot`).
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source "$ROOT/config/sheng.env"
+DEV="${KSHIM_DEVICE:-sheng}"
+case "$DEV" in
+  ''|*[!A-Za-z0-9_-]*) echo "invalid KSHIM_DEVICE: $DEV" >&2; exit 1 ;;
+esac
+[ -f "$ROOT/config/${DEV}.env" ] || { echo "missing $ROOT/config/${DEV}.env" >&2; exit 1; }
+source "$ROOT/config/${DEV}.env"
 
 image="$ROOT/out/boot_a.img"; assume_yes=0; force=0
 while [ $# -gt 0 ]; do

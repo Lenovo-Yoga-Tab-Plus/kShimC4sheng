@@ -97,6 +97,23 @@ scripts/build_runtime.sh config/sheng_defconfig out/runtime
 The result must be exactly 4 MiB and is copied to `out/runtime.bin`;
 `make-boot.sh` picks it up automatically.
 
+Lenovo Yoga Tab Plus (lapis, SM8650) uses the same menu. Stock Android is
+slot B. `KSHIM_DEVICE=lapis` selects the 96 MiB boot partition, the
+2944×1840 panel, and `root=LABEL=eos-lapis rw rootwait`. Build the packed
+kernel with `scripts/make-boot.sh --stock-boot boot_b.img`, then
+`scripts/splice-lapis-boot-b.py` writes the menu after `boot_b`'s signed
+vbmeta and leaves that signature and footer in place. The bootloader still
+loads `init_boot_b`, `vendor_boot_b` and `dtbo_b` before the menu runs.
+Choosing Android returns to the stock kernel with that tree.
+
+```sh
+KSHIM_DEVICE=lapis scripts/build_runtime.sh config/lapis_defconfig out/runtime
+KSHIM_DEVICE=lapis scripts/make-boot.sh --stock-boot boot_b.img \
+  --distro-boot silicium.img --keep-payload
+scripts/splice-lapis-boot-b.py --stock-boot boot_b.img \
+  --packed out/work/packed-kernel.bin --out boot_b-kshim.img
+```
+
 ## Layout
 
 ```text

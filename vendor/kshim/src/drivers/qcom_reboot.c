@@ -56,7 +56,9 @@ int kshim_qcom_reboot_parse(const void *fdt,
         fdt_node_check_compatible(fdt, 0, "lenovo,baldur") &&
         fdt_node_check_compatible(fdt, 0, "qcom,sunp") &&
         fdt_node_check_compatible(fdt, 0, "qcom,kalama") &&
-        fdt_node_check_compatible(fdt, 0, "xiaomi,sheng"))
+        fdt_node_check_compatible(fdt, 0, "xiaomi,sheng") &&
+        fdt_node_check_compatible(fdt, 0, "qcom,lapis") &&
+        fdt_node_check_compatible(fdt, 0, "qcom,lapis-qrd"))
         return KSHIM_QCOM_REBOOT_UNSUPPORTED;
 
     int scm = unique_compatible(fdt, "qcom,scm");

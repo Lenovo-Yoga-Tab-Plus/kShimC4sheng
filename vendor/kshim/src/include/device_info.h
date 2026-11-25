@@ -27,6 +27,7 @@
  *   - DEVICE_BOARD_TB323FU: exact "lenovo,tb323fu" or exact "lenovo,baldur".
  *   - DEVICE_BOARD_SHENG: exact "xiaomi,sheng", or an SM8550 root whose
  *     original model string contains the downstream code name "sheng".
+ *   - DEVICE_BOARD_LAPIS: exact "qcom,lapis" or exact "qcom,lapis-qrd".
  *   - "qcom,canoep" alone is a SoC marker, not a board identity.
  * Conflicting board evidence leave the board UNKNOWN; unrelated
  * devices that share a SoC keep the board UNKNOWN.
@@ -46,6 +47,8 @@
  *     "qcom,sm8850".
  *   - DEVICE_SOC_SM8550: "qcom,sm8550" or the downstream family name
  *     "qcom,kalama".
+ *   - DEVICE_SOC_SM8650: "qcom,sm8650", "qcom,pineapple", "qcom,lapis" or
+ *     "qcom,lapis-qrd".
  * Entries from more than one group leave the SoC UNKNOWN.
  *
  * The compatible field preserves the original root compatible list verbatim
@@ -75,6 +78,7 @@ enum device_board {
     DEVICE_BOARD_TB322FC,
     DEVICE_BOARD_TB323FU,
     DEVICE_BOARD_SHENG,
+    DEVICE_BOARD_LAPIS,
 };
 
 enum device_soc {
@@ -82,6 +86,7 @@ enum device_soc {
     DEVICE_SOC_SM8750,
     DEVICE_SOC_SM8850,
     DEVICE_SOC_SM8550,
+    DEVICE_SOC_SM8650,
 };
 
 struct device_info {

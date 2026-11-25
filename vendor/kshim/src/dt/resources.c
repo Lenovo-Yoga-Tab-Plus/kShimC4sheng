@@ -153,11 +153,13 @@ static int resources_init_validated(const void *f)
         if (!kshim_dt_splash_reservation(f, &splash_mem, NULL)) {
             resources.framebuffer = (kshim_framebuffer_config_t){
                 .render_address = splash_mem.base,
-                .width = 3048, .height = 2032,
+                .width = CONFIG_KSHIM_SPLASH_FALLBACK_WIDTH,
+                .height = CONFIG_KSHIM_SPLASH_FALLBACK_HEIGHT,
                 .stride = CONFIG_KSHIM_SPLASH_FALLBACK_STRIDE,
                 .bpp = 32, .format = KSHIM_FB_FORMAT_XRGB8888,
                 .foreground = 0xffffffffu, .background = 0xff000000u,
-                .buffer_size = (size_t)CONFIG_KSHIM_SPLASH_FALLBACK_STRIDE * 2032,
+                .buffer_size = (size_t)CONFIG_KSHIM_SPLASH_FALLBACK_STRIDE *
+                               (size_t)CONFIG_KSHIM_SPLASH_FALLBACK_HEIGHT,
             };
             display = (kshim_mmu_region_t){splash_mem.base, splash_mem.size,
                                            KSHIM_MMU_NORMAL_NC,

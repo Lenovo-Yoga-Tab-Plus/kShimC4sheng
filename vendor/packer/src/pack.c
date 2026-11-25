@@ -16,7 +16,10 @@ static bool align_linux_offset(
   if (minimum > SIZE_MAX - adjustment)
     return false;
   *result = minimum + adjustment;
-  return (*result & (alignment - 1)) == 0;
+  /* Residue must match text_offset, not a pure 2 MiB boundary. BootShim's
+   * text_offset is a physical address (low bits 0x100000), so requiring
+   * result % alignment == 0 rejects a valid placement. */
+  return (*result & mask) == requiredResidue;
 }
 
 static bool load_file(FileContent *file)

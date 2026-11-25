@@ -2,7 +2,12 @@
 # One-shot: stock boot image + Linux kernel/DTB (+ optional initrd) -> boot_a.img
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source "$ROOT/config/sheng.env"
+DEV="${KSHIM_DEVICE:-sheng}"
+case "$DEV" in
+  ''|*[!A-Za-z0-9_-]*) echo "invalid KSHIM_DEVICE: $DEV" >&2; exit 1 ;;
+esac
+[ -f "$ROOT/config/${DEV}.env" ] || { echo "missing $ROOT/config/${DEV}.env" >&2; exit 1; }
+source "$ROOT/config/${DEV}.env"
 
 usage() {
   cat <<'USAGE'
@@ -15,7 +20,7 @@ options:
   --runtime <file>    kShimC runtime (default: out/runtime.bin, 4 MiB)
   --default android|linux   menu default (default: android)
   --timeout-ms N      menu timeout (default: 8000)
-  --bootargs STR      Linux cmdline (default: root=PARTLABEL=linux rw rootwait)
+  --bootargs STR      Linux cmdline (default: the selected device env)
   --keep-payload      keep the extracted payload directory
   -h, --help
 
@@ -70,7 +75,7 @@ fi
 
 if [ ! -f "$runtime" ]; then
   echo "missing runtime: $runtime" >&2
-  echo "build it once: scripts/build_runtime.sh config/sheng_defconfig out/runtime" >&2
+  echo "build it once: scripts/build_runtime.sh config/${DEV}_defconfig out/runtime" >&2
   echo "(or copy an existing 4 MiB kShimC.bin and pass --runtime)" >&2
   exit 1
 fi

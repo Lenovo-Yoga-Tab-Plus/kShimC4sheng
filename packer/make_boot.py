@@ -65,6 +65,20 @@ def patch_dtb(src, dst, bootargs, initrd_index):
         tree = fdt.Fdt.parse(blob)
     except fdt.FdtError as e:
         die("%s: %s" % (src, e))
+    # Lapis simple-framebuffer nodes carry memory-region. The runtime
+    # rejects that and falls back to Android, so drop it before packing.
+    chosen = tree.node("/chosen")
+    if chosen is not None:
+        for child in chosen.children:
+            compat = child.get("compatible") or b""
+            if b"simple-framebuffer" not in compat:
+                continue
+            child.delete("memory-region")
+            if child.name.startswith("framebuffer@"):
+                child.name = "framebuffer-template"
+    # The ramoops node stays as it is. It has the same layout as the stock
+    # Android node, so after an Android boot that dies, the next Linux boot
+    # shows that kernel log in /sys/fs/pstore/console-ramoops-0.
     tree.set("/chosen", "bootargs", bootargs.encode("utf-8") + b"\0")
     if initrd_index is not None:
         tree.set("/chosen", "kshim,initrd-entry", int(initrd_index).to_bytes(4, "big"))
@@ -124,6 +138,32 @@ def write_config(path, args, staged):
             "Align = 12",
             "",
         ]
+    # Android DT and ramdisk stay unreferenced. The base entry keeps the
+    # bootloader DT slot; the runtime publishes these only when Android is
+    # selected. Linking them as the Linux DTB would feed Silicium the
+    # Android ramdisk.
+    extra = 3 + (1 if staged.get("initrd") else 0)
+    if staged.get("android_dtb"):
+        blocks += [
+            "[Image-%02d]" % extra,
+            "Name = android-dtb",
+            "Path = %s" % staged["android_dtb"],
+            "Type = DTB",
+            "BaseImage = false",
+            "Align = 12",
+            "",
+        ]
+        extra += 1
+    if staged.get("android_ramdisk"):
+        blocks += [
+            "[Image-%02d]" % extra,
+            "Name = android-initrd",
+            "Path = %s" % staged["android_ramdisk"],
+            "Type = Blob",
+            "BaseImage = false",
+            "Align = 12",
+            "",
+        ]
     blocks += ["[Manifest]", "Type = Manifest", ""]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(blocks))
@@ -152,6 +192,10 @@ def verify(packed, stock, staged, args):
         exp.append("sheng-dtb")
     if staged.get("initrd"):
         exp.append("initrd")
+    if staged.get("android_dtb"):
+        exp.append("android-dtb")
+    if staged.get("android_ramdisk"):
+        exp.append("android-initrd")
     names = [e["name"] for e in m["entries"]]
     if names[:len(exp)] != exp:
         die("manifest entries %r != expected %r" % (names, exp))
@@ -161,6 +205,8 @@ def verify(packed, stock, staged, args):
     android, linux = m["entries"][:2]
     if android["type_name"] != "Linux" or "BASE_IMAGE" not in android["flag_names"]:
         die("entry 0 is not a Linux base image")
+    if staged.get("android_dtb") and "HAS_DTB" in android["flag_names"]:
+        die("Android base image must not carry DeviceTreeBlob")
     if "EXECUTABLE" not in android["flag_names"]:
         die("entry 0 is not executable")
     if linux["type_name"] != "Linux":
@@ -211,6 +257,8 @@ def main():
     ap.add_argument("--no-dtb", action="store_true",
                     help="diagnostic: omit the DTB entry and pass the ABL DT through")
     ap.add_argument("--initrd", help="optional initramfs/initrd image")
+    ap.add_argument("--android-dtb", help="Android DT published for the base image")
+    ap.add_argument("--android-ramdisk", help="Android initrd published for the base image")
     ap.add_argument("--runtime", required=True, help="4 MiB kShimC runtime")
     ap.add_argument("--out", required=True, help="output boot image path")
     ap.add_argument("--default", choices=("android", "linux"), default="android")
@@ -222,7 +270,8 @@ def main():
     ap.add_argument("--pad-to", type=int, help="pad the boot image to this size")
     ap.add_argument("--keep-work", action="store_true")
     args = ap.parse_args()
-    for name in ("stock_boot", "distro_boot", "linux_image", "dtb", "initrd", "runtime",
+    for name in ("stock_boot", "distro_boot", "linux_image", "dtb", "initrd",
+                 "android_dtb", "android_ramdisk", "runtime",
                  "packer", "out", "work"):
         value = getattr(args, name)
         if value:
@@ -253,6 +302,8 @@ def main():
         die("--dtb is required unless --no-dtb")
     if args.initrd and args.no_dtb:
         die("--initrd requires a DTB (kshim,initrd-entry lives there)")
+    if bool(args.android_dtb) != bool(args.android_ramdisk):
+        die("--android-dtb and --android-ramdisk are used together")
     args.default_section = "Image-00" if args.default == "android" else "Image-01"
     if not os.path.exists(args.packer):
         die("packer not built: %s (run packer/build_packer.sh)" % args.packer)
@@ -287,8 +338,8 @@ def main():
         if dtb[:4] != DTB_MAGIC:
             die("%s is not a DTB" % args.dtb)
     runtime = read(args.runtime, "runtime")
-    if len(runtime) != 4 * 1024 * 1024:
-        die("runtime must be exactly 4 MiB, got %d" % len(runtime))
+    if len(runtime) > 4 * 1024 * 1024 or len(runtime) < 64 * 1024 or len(runtime) % 4096:
+        die("runtime must be a 4 KiB multiple of at most 4 MiB, got %d" % len(runtime))
     initrd = read(args.initrd, "initrd") if args.initrd else None
 
     work = args.work
@@ -307,6 +358,16 @@ def main():
         staged["initrd"] = os.path.join(work, "initrd.img")
         with open(staged["initrd"], "wb") as f:
             f.write(initrd)
+    if args.android_dtb:
+        android_dtb = read(args.android_dtb, "Android DTB")
+        if android_dtb[:4] != DTB_MAGIC:
+            die("%s is not a DTB" % args.android_dtb)
+        staged["android_dtb"] = os.path.join(work, "android.dtb")
+        with open(staged["android_dtb"], "wb") as f:
+            f.write(android_dtb)
+        staged["android_ramdisk"] = os.path.join(work, "android-initrd.img")
+        with open(staged["android_ramdisk"], "wb") as f:
+            f.write(read(args.android_ramdisk, "Android ramdisk"))
 
     initrd_index = 3 if initrd else None
     if dtb:

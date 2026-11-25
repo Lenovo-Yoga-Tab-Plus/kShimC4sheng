@@ -41,7 +41,18 @@ Applied:
 - Atlas six-page UI (`src/ui/menu_atlas.h`) and 56×56 A8 icons
   (`src/ui/atlas_icons.h`).
 
-## 5. Optional: touch
+## 5. Lenovo Yoga Tab Plus (lapis, SM8650)
+
+Same menu, Android kernel restore, and embedded Linux jump. The lapis profile
+is selected with `KSHIM_DEVICE=lapis` and `config/lapis_defconfig`.
+
+- board: exact `qcom,lapis` or `qcom,lapis-qrd` (`qcom,qrd` alone is not a board)
+- SoC: `qcom,sm8650`, `qcom,pineapple`, `qcom,lapis`, or `qcom,lapis-qrd`
+- splash fallback: 2944×1840, stride 11776
+- boot partition: 96 MiB; Linux cmdline `root=LABEL=eos-lapis rw rootwait`
+- `scripts/flash.sh` still writes `boot_a`
+
+## 6. Optional: touch
 
 sheng uses a Novatek NT36532E panel with the userspace `thp` stack; kShimC only
 supports ST FTM5 today. Do not enable `CONFIG_KSHIM_TOUCH` before the I²C

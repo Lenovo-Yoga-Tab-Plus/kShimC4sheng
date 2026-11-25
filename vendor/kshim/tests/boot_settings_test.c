@@ -24,6 +24,7 @@ static void test_defaults(void)
     assert(BOOT_DEVICE_TB322FC == 1);
     assert(BOOT_DEVICE_TB323FU == 2);
     assert(BOOT_DEVICE_SHENG == 3);
+    assert(BOOT_DEVICE_LAPIS == 4);
     assert(BOOT_TARGET_MANIFEST == 0);
     assert(BOOT_TARGET_ANDROID == 1);
     assert(BOOT_TARGET_INTERNAL == 2);
@@ -115,8 +116,10 @@ static void test_validate_rejects_out_of_range(void)
     bad = valid;
     bad.device_choice = (enum boot_device_choice)-1;
     assert(boot_settings_validate(&bad) == BOOT_SETTINGS_INVALID);
-    bad.device_choice = (enum boot_device_choice)4;
+    bad.device_choice = (enum boot_device_choice)5;
     assert(boot_settings_validate(&bad) == BOOT_SETTINGS_INVALID);
+    bad.device_choice = BOOT_DEVICE_LAPIS;
+    assert(boot_settings_validate(&bad) == BOOT_SETTINGS_OK);
 
     bad = valid;
     bad.default_target = (enum boot_default_target)-1;
@@ -286,9 +289,19 @@ static void test_resolve_boundaries(void)
     assert(boot_settings_effective_board(&settings, (enum device_board)-1,
                                          &board) == BOOT_SETTINGS_INVALID);
     assert(board == DEVICE_BOARD_TB323FU);
-    assert(boot_settings_effective_board(&settings, (enum device_board)4,
+    assert(boot_settings_effective_board(&settings, (enum device_board)5,
                                          &board) == BOOT_SETTINGS_INVALID);
     assert(board == DEVICE_BOARD_TB323FU);
+    assert(boot_settings_effective_board(&settings, DEVICE_BOARD_LAPIS,
+                                         &board) == BOOT_SETTINGS_OK);
+    assert(board == DEVICE_BOARD_LAPIS);
+    settings.device_choice = BOOT_DEVICE_LAPIS;
+    board = DEVICE_BOARD_UNKNOWN;
+    assert(boot_settings_effective_board(&settings, DEVICE_BOARD_SHENG,
+                                         &board) == BOOT_SETTINGS_OK);
+    assert(board == DEVICE_BOARD_LAPIS);
+    settings.device_choice = BOOT_DEVICE_AUTO;
+    board = DEVICE_BOARD_TB323FU;
     assert(boot_settings_effective_board(NULL, DEVICE_BOARD_UNKNOWN, &board) ==
            BOOT_SETTINGS_INVALID);
     assert(board == DEVICE_BOARD_TB323FU);

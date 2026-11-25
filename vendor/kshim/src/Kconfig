@@ -29,12 +29,38 @@ config KSHIM_SPLASH_FALLBACK
     help
       When the SDE routing decoder cannot describe the
       bootloader scanout, fall back to the DT splash reservation with a
-      fixed 3048x2032 XRGB8888 geometry (sheng SM8550).
+      fixed XRGB8888 geometry. The defaults are the sheng SM8550 panel.
+
+config KSHIM_SPLASH_FALLBACK_WIDTH
+    int "Splash-fallback framebuffer width in pixels"
+    depends on KSHIM_SPLASH_FALLBACK
+    default 3048
+
+config KSHIM_SPLASH_FALLBACK_HEIGHT
+    int "Splash-fallback framebuffer height in pixels"
+    depends on KSHIM_SPLASH_FALLBACK
+    default 2032
 
 config KSHIM_SPLASH_FALLBACK_STRIDE
     int "Splash-fallback framebuffer stride in bytes"
     depends on KSHIM_SPLASH_FALLBACK
     default 12192
+
+config KSHIM_DEVICE_BANNER
+    string "Menu banner prefix, concatenated with the version"
+    default "Xiaomi Pad 6S Pro · sheng · v"
+
+config KSHIM_DEVICE_FOOTER
+    string "Atlas footer"
+    default "sheng · SM8550"
+
+config KSHIM_DEVICE_PAGE_NAME
+    string "Fixed device-page title"
+    default "Xiaomi Pad 6S Pro"
+
+config KSHIM_DEVICE_PAGE_DESC
+    string "Fixed device-page description"
+    default "sheng (SM8550)"
 
 config KSHIM_QCOM_REBOOT
     bool "DT-selected Qualcomm recovery, bootloader and EDL targets"

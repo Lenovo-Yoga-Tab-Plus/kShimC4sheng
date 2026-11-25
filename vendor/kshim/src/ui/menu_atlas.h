@@ -20,6 +20,13 @@
 
 #include "atlas_icons.h"
 
+#ifndef CONFIG_KSHIM_DEVICE_BANNER
+#define CONFIG_KSHIM_DEVICE_BANNER "Xiaomi Pad 6S Pro · sheng · v"
+#endif
+#ifndef CONFIG_KSHIM_DEVICE_FOOTER
+#define CONFIG_KSHIM_DEVICE_FOOTER "sheng · SM8550"
+#endif
+
 static lv_obj_t *mAtlasRoot;
 static lv_obj_t *mAtlasSidebar;
 static lv_obj_t *mAtlasContent;
@@ -626,7 +633,7 @@ static int KshimAtlasInit(void)
 
   AtlasText(mAtlasRoot, KSHIM_MENU_TEXT_TITLE("KShimC"), mAtlasTitleFont, ATLAS_TEXT,
             Margin, Margin / 2, W * 55 / 100, 72);
-  AtlasText(mAtlasRoot, "Xiaomi Pad 6S Pro \u00b7 sheng \u00b7 v" KSHIM_BUILD_VERSION, mAtlasBodyFont,
+  AtlasText(mAtlasRoot, CONFIG_KSHIM_DEVICE_BANNER KSHIM_BUILD_VERSION, mAtlasBodyFont,
             ATLAS_MUTED, Margin, Margin / 2 + 76, W * 55 / 100, 40);
   mAtlasLang = AtlasText(mAtlasRoot, kshim_menu_text(KSHIM_TEXT_LANGUAGE_STATE),
                          mAtlasBodyFont, ATLAS_MUTED, W - Margin - 260, Margin / 2 + 34,
@@ -651,7 +658,7 @@ static int KshimAtlasInit(void)
                            W * 42 / 100, H - FooterH + 22, W * 40 / 100, 44);
   if (mAtlasStatus != NULL)
     lv_obj_set_style_text_align(mAtlasStatus, LV_TEXT_ALIGN_CENTER, 0);
-  AtlasText(mAtlasRoot, "sheng \u00b7 SM8550", mAtlasBodyFont, ATLAS_MUTED,
+  AtlasText(mAtlasRoot, CONFIG_KSHIM_DEVICE_FOOTER, mAtlasBodyFont, ATLAS_MUTED,
             W - Margin - 320, H - FooterH + 22, 320, 44);
 
 

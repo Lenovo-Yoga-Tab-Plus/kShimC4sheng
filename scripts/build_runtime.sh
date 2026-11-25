@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the 4 MiB kShimC runtime from config/sheng_defconfig.
+# Build the 4 MiB kShimC runtime. Default defconfig follows KSHIM_DEVICE (sheng).
 set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
@@ -47,7 +47,7 @@ if [ ${#missing[@]} -gt 0 ]; then
   exit 1
 fi
 
-DEFCONFIG=${1:-config/sheng_defconfig}
+DEFCONFIG=${1:-config/${KSHIM_DEVICE:-sheng}_defconfig}
 OUT=${2:-out/runtime}
 python3 vendor/kshim/tools/build_runtime.py \
   --config "$DEFCONFIG" \

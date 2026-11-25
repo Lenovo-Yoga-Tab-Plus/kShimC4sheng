@@ -150,6 +150,136 @@ __attribute__((weak)) int kshim_qcom_spmi_read32(void *context, uint8_t sid,
   return port_count ? spmi_read(&ports[0], sid, address, value) : -1;
 }
 
+#if defined(__aarch64__) && !defined(KSHIM_HOST_TEST)
+/* TB520FU volume keys are SPMI observer reads: PON 0x1310 (power bit 7,
+ * volume-down bit 6) and pm8550 gpio6 0x8D10 (volume-up, active low).
+ * The arbiter init used above can fail closed on this v7 map, which leaves
+ * the menu up and the keys dead. This is the same observer sequence the
+ * boot selector already uses on this tablet. */
+static int v7_mmio_read(uint64_t address, uint32_t *value)
+{
+  if ((address & 3U) != 0U) return -1;
+  *value = *(volatile uint32_t *)(uintptr_t)address;
+  __asm__ volatile("dsb sy" ::: "memory");
+  return 0;
+}
+
+static int v7_mmio_write(uint64_t address, uint32_t value)
+{
+  if ((address & 3U) != 0U) return -1;
+  __asm__ volatile("dsb sy" ::: "memory");
+  *(volatile uint32_t *)(uintptr_t)address = value;
+  __asm__ volatile("dsb sy" ::: "memory");
+  return 0;
+}
+
+static uint64_t v7_ticks(void)
+{
+  uint64_t ticks;
+  __asm__ volatile("isb\n mrs %0, cntvct_el0" : "=r"(ticks));
+  return ticks;
+}
+
+static uint64_t v7_freq(void)
+{
+  uint64_t frequency;
+  __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(frequency));
+  return frequency;
+}
+
+static int v7_apid(uint64_t core, uint64_t cfg, uint8_t ee, uint16_t ppid, uint16_t *apid)
+{
+  struct slot { uint64_t core; uint16_t ppid, apid; uint8_t ee, state; };
+  static struct slot cache[4];
+  uint32_t version, count;
+  uint16_t hit = 0;
+  int found = 0;
+  unsigned i;
+
+  for (i = 0; i < 4U; i++) {
+    if (cache[i].state && cache[i].core == core && cache[i].ppid == ppid && cache[i].ee == ee) {
+      if (cache[i].state != 1U) return -1;
+      *apid = cache[i].apid;
+      return 0;
+    }
+  }
+  if (core < 0x1000U || cfg < 0x1000U || v7_mmio_read(core, &version) ||
+      v7_mmio_read(core + 4U, &count))
+    return -1;
+  if (version < 0x70000000U || version >= 0x80000000U) return -2;
+  count &= 0x7ffU;
+  if (count > 1024U) count = 1024U;
+  for (i = 0; i < count; i++) {
+    uint32_t map, owner;
+    if (v7_mmio_read(core + 0x2000U + 4U * i, &map)) return -1;
+    if (!map || ((map >> 8) & 0xfffU) != ppid) continue;
+    if (v7_mmio_read(cfg + 4U * i, &owner)) return -1;
+    if ((owner & 7U) == ee) { hit = (uint16_t)i; found = 1; }
+  }
+  for (i = 0; i < 4U; i++) {
+    if (cache[i].state) continue;
+    cache[i] = (struct slot){core, ppid, hit, ee, found ? 1U : 2U};
+    break;
+  }
+  if (!found) return -1;
+  *apid = hit;
+  return 0;
+}
+
+static int v7_read_byte(uint64_t obs, uint16_t apid, uint16_t reg, uint32_t *value)
+{
+  uint64_t channel, frequency, started;
+  uint32_t command, state, data;
+  unsigned spin;
+
+  if (obs < 0x1000U || apid >= 1024U) return -1;
+  channel = obs + 0x20ULL * apid;
+  command = (1U << 27) | ((reg & 0xffU) << 4);
+  frequency = v7_freq();
+  started = v7_ticks();
+  if (frequency < 1000000ULL || frequency > 2000000000ULL || v7_mmio_write(channel, command))
+    return -1;
+  for (spin = 0; spin < 100000U; spin++) {
+    if (v7_mmio_read(channel + 8U, &state)) return -1;
+    if ((state & 1U) == 0U) {
+      if (v7_ticks() - started >= frequency / 1000ULL) return -1;
+      continue;
+    }
+    if ((state & 0xeU) || v7_mmio_read(channel + 0x18U, &data)) return -1;
+    *value = (uint8_t)data;
+    return 0;
+  }
+  return -1;
+}
+
+static int kshim_spmi_v7_key_read(uint64_t token, uint32_t *value)
+{
+  uint8_t sid = QCOM_KEY_SPMI_TOKEN_SID(token);
+  uint32_t reg = QCOM_KEY_SPMI_TOKEN_ADDRESS(token);
+  uint16_t ppid, apid;
+  unsigned index;
+  int status = -1;
+
+  if (reg > UINT16_MAX) return -1;
+  ppid = (uint16_t)(((uint16_t)sid << 8) | (reg >> 8));
+  index = (unsigned)QCOM_KEY_SPMI_TOKEN_CONTROLLER(token);
+  if (index < port_count && ports[index].spmi) {
+    SpmiDeviceContext *ctx = ports[index].spmi;
+    uint64_t core = ctx->Regions[SPMI_MEMORY_REGION_TYPE_CORE].BaseAddress;
+    uint64_t cfg = ctx->Regions[SPMI_MEMORY_REGION_TYPE_CONFIG].BaseAddress;
+    uint64_t obs = ctx->Regions[SPMI_MEMORY_REGION_TYPE_OBSERVER].BaseAddress;
+    status = v7_apid(core, cfg, ctx->ActiveEE, ppid, &apid);
+    if (!status) status = v7_read_byte(obs, apid, (uint16_t)reg, value);
+    if (!status) return 0;
+    if (core == 0x0c400000ULL && cfg == 0x0c42d000ULL && obs == 0x0c440000ULL)
+      return -1;
+  }
+  status = v7_apid(0x0c400000ULL, 0x0c42d000ULL, 0, ppid, &apid);
+  if (!status) status = v7_read_byte(0x0c440000ULL, apid, (uint16_t)reg, value);
+  return status ? -1 : 0;
+}
+#endif
+
 #endif
 
 int kshim_qcom_key_read32_status(
@@ -160,6 +290,9 @@ int kshim_qcom_key_read32_status(
     return -1;
   if (QCOM_KEY_IS_SPMI_TOKEN(Address)) {
 #if CONFIG_QCOM_SPMI
+#if defined(__aarch64__) && !defined(KSHIM_HOST_TEST)
+    if (kshim_spmi_v7_key_read(Address, Value) == 0) return 0;
+#endif
     unsigned index = QCOM_KEY_SPMI_TOKEN_CONTROLLER(Address);
     if (index >= port_count || !ports[index].spmi ||
         ports[index].spmi->BusId != QCOM_KEY_SPMI_TOKEN_BUS(Address)) return -1;

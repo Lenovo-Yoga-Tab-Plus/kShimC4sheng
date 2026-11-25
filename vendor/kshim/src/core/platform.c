@@ -942,11 +942,13 @@ static int menu_fill_device_info(struct menu_selection *menu)
              info->board == DEVICE_BOARD_TB322FC ? "TB322FC" :
              info->board == DEVICE_BOARD_TB323FU ? "TB323FU" :
              info->board == DEVICE_BOARD_SHENG ? "Xiaomi Pad 6S Pro" :
+             info->board == DEVICE_BOARD_LAPIS ? "Lenovo Yoga Tab Plus" :
              kshim_menu_text(KSHIM_TEXT_UNKNOWN));
     snprintf(menu->info_values[1], sizeof(menu->info_values[1]), "%s",
              info->soc == DEVICE_SOC_SM8750 ? "SM8750" :
              info->soc == DEVICE_SOC_SM8850 ? "SM8850" :
              info->soc == DEVICE_SOC_SM8550 ? "SM8550" :
+             info->soc == DEVICE_SOC_SM8650 ? "SM8650" :
              kshim_menu_text(KSHIM_TEXT_UNKNOWN));
 
     /* Original DT model, bounded to a readable length on a UTF-8 boundary with
@@ -1104,6 +1106,7 @@ static const char *settings_board_name(enum device_board board)
     if (board == DEVICE_BOARD_TB322FC) return kshim_menu_text(KSHIM_TEXT_BOARD_TB322FC_NAME);
     if (board == DEVICE_BOARD_TB323FU) return kshim_menu_text(KSHIM_TEXT_BOARD_TB323FU_NAME);
     if (board == DEVICE_BOARD_SHENG) return "Xiaomi Pad 6S Pro";
+    if (board == DEVICE_BOARD_LAPIS) return "Lenovo Yoga Tab Plus";
     return kshim_menu_text(KSHIM_TEXT_UNKNOWN);
 }
 /* Localized platform code for a board. */
@@ -1112,6 +1115,7 @@ static const char *settings_board_code(enum device_board board)
     if (board == DEVICE_BOARD_TB322FC) return kshim_menu_text(KSHIM_TEXT_DEVICE_TB322FC_NAME);
     if (board == DEVICE_BOARD_TB323FU) return kshim_menu_text(KSHIM_TEXT_DEVICE_TB323FU_NAME);
     if (board == DEVICE_BOARD_SHENG) return "sheng";
+    if (board == DEVICE_BOARD_LAPIS) return "lapis";
     return kshim_menu_text(KSHIM_TEXT_UNKNOWN);
 }
 /* Row index of the selectable Default-page row that matches the resolved
@@ -1507,8 +1511,14 @@ static int menu_fill_settings(struct menu_selection *menu)
 
     /* Device is fixed for this build; the page is retained for the Back
      * action machinery but is no longer reachable from Settings. */
-    if (menu_append(&menu->pages[MENU_PAGE_DEVICE], "Xiaomi Pad 6S Pro",
-                    "sheng (SM8550)", MENU_UNAVAILABLE, 0,
+#ifndef CONFIG_KSHIM_DEVICE_PAGE_NAME
+#define CONFIG_KSHIM_DEVICE_PAGE_NAME "Xiaomi Pad 6S Pro"
+#endif
+#ifndef CONFIG_KSHIM_DEVICE_PAGE_DESC
+#define CONFIG_KSHIM_DEVICE_PAGE_DESC "sheng (SM8550)"
+#endif
+    if (menu_append(&menu->pages[MENU_PAGE_DEVICE], CONFIG_KSHIM_DEVICE_PAGE_NAME,
+                    CONFIG_KSHIM_DEVICE_PAGE_DESC, MENU_UNAVAILABLE, 0,
                     KSHIM_MENU_ROLE_DEVICE) ||
         menu_append(&menu->pages[MENU_PAGE_DEVICE], KSHIM_MENU_ACTION_BACK,
                     KSHIM_MENU_DESC_BACK_PARENT,
